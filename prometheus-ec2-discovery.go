@@ -51,7 +51,6 @@ func main() {
 			LoadBalancerNames: []*string{
 				aws.String(elbName),
 			},
-			Marker:   aws.String("Marker"),
 			PageSize: aws.Int64(1),
 		}
 		resp, err := svc.DescribeLoadBalancers(params)

@@ -14,14 +14,16 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/elb"
 )
 
 var (
-	dest   string
-	port   int
-	region string
-	sleep  time.Duration
-	tags   Tags
+	dest    string
+	port    int
+	region  string
+	elbName string
+	sleep   time.Duration
+	tags    Tags
 )
 
 // TargetGroup is a collection of related hosts that prometheus monitors
@@ -40,6 +42,31 @@ type Tags []Tag
 func main() {
 	initFlags()
 
+	var instanceIds []*string
+
+	if elbName != "" {
+		svc := elb.New(session.New(), &aws.Config{Region: aws.String(region)})
+
+		params := &elb.DescribeLoadBalancersInput{
+			LoadBalancerNames: []*string{
+				aws.String(elbName),
+			},
+			Marker:   aws.String("Marker"),
+			PageSize: aws.Int64(1),
+		}
+		resp, err := svc.DescribeLoadBalancers(params)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		for _, d := range resp.LoadBalancerDescriptions {
+			for _, i := range d.Instances {
+				instanceIds = append(instanceIds, i.InstanceId)
+			}
+		}
+	}
+
 	filters := []*ec2.Filter{}
 	for _, t := range tags {
 		filters = append(filters, &ec2.Filter{
@@ -50,6 +77,9 @@ func main() {
 
 	e := ec2.New(session.New(), &aws.Config{Region: aws.String(region)})
 	params := &ec2.DescribeInstancesInput{Filters: filters}
+	if len(instanceIds) > 0 {
+		params.InstanceIds = instanceIds
+	}
 
 	for {
 		resp, err := e.DescribeInstances(params)
@@ -92,6 +122,7 @@ func initFlags() {
 	flag.IntVar(&port, "port", 80, "Port that is exposing /metrics")
 	flag.StringVar(&dest, "dest", "-", "File to write the target group JSON. (e.g. `tgroups/target_groups.json`)")
 	flag.StringVar(&regionRaw, "region", "us-west-2", "AWS region to query")
+	flag.StringVar(&elbName, "elb", "", "AWS ELB AccessPointName")
 	flag.StringVar(&tagsRaw, "tags", "Name", "Comma seperated list of tags to group by (e.g. `Environment,Application`). You can also filter by tag value (e.g. `Application,Envionment=Production`)")
 
 	flag.Parse()

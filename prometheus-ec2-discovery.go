@@ -42,28 +42,10 @@ type Tags []Tag
 func main() {
 	initFlags()
 
-	var instanceIds []*string
+	var elbSvc *elb.ELB
 
 	if elbName != "" {
-		svc := elb.New(session.New(), &aws.Config{Region: aws.String(region)})
-
-		params := &elb.DescribeLoadBalancersInput{
-			LoadBalancerNames: []*string{
-				aws.String(elbName),
-			},
-			PageSize: aws.Int64(1),
-		}
-		resp, err := svc.DescribeLoadBalancers(params)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-
-		for _, d := range resp.LoadBalancerDescriptions {
-			for _, i := range d.Instances {
-				instanceIds = append(instanceIds, i.InstanceId)
-			}
-		}
+		elbSvc = elb.New(session.New(), &aws.Config{Region: aws.String(region)})
 	}
 
 	filters := []*ec2.Filter{}
@@ -76,11 +58,21 @@ func main() {
 
 	e := ec2.New(session.New(), &aws.Config{Region: aws.String(region)})
 	params := &ec2.DescribeInstancesInput{Filters: filters}
-	if len(instanceIds) > 0 {
-		params.InstanceIds = instanceIds
-	}
 
 	for {
+
+		if elbName != "" {
+			instanceIds, err := instanceIdsOfELB(elbSvc, elbName)
+			if err != nil {
+				log.Fatal(err)
+				continue
+			}
+
+			if len(instanceIds) > 0 {
+				params.InstanceIds = instanceIds
+			}
+		}
+
 		resp, err := e.DescribeInstances(params)
 		if err != nil {
 			log.Fatal(err)
@@ -267,4 +259,27 @@ func allTagKeys(instances []*ec2.Instance) []string {
 	}
 	sort.Strings(tags)
 	return tags
+}
+
+func instanceIdsOfELB(elbSvc *elb.ELB, name string) ([]*string, error) {
+	var instanceIds []*string
+
+	params := &elb.DescribeLoadBalancersInput{
+		LoadBalancerNames: []*string{
+			aws.String(elbName),
+		},
+		PageSize: aws.Int64(1),
+	}
+	resp, err := elbSvc.DescribeLoadBalancers(params)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, d := range resp.LoadBalancerDescriptions {
+		for _, i := range d.Instances {
+			instanceIds = append(instanceIds, i.InstanceId)
+		}
+	}
+
+	return instanceIds, nil
 }

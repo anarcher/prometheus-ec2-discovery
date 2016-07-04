@@ -24,6 +24,7 @@ var (
 	elbName string
 	sleep   time.Duration
 	tags    Tags
+	labels  map[string]string
 )
 
 // TargetGroup is a collection of related hosts that prometheus monitors
@@ -85,6 +86,15 @@ func main() {
 		}
 
 		targetGroups := groupByTags(instances, tagKeys)
+		if len(labels) > 0 {
+			fmt.Println("labels:", len(labels))
+			for _, tg := range targetGroups {
+				for k, v := range labels {
+					tg.Labels[k] = v
+				}
+			}
+		}
+
 		b := marshalTargetGroups(targetGroups)
 		if dest == "-" {
 			_, err = os.Stdout.Write(b)
@@ -107,6 +117,7 @@ func initFlags() {
 	var (
 		tagsRaw   string
 		regionRaw string
+		labelRaw  string
 	)
 
 	flag.DurationVar(&sleep, "sleep", 0, "Amount of time between regenerating the target_group.json. If 0, terminate after the first generation")
@@ -115,11 +126,20 @@ func initFlags() {
 	flag.StringVar(&regionRaw, "region", "us-west-2", "AWS region to query")
 	flag.StringVar(&elbName, "elb", "", "AWS ELB AccessPointName")
 	flag.StringVar(&tagsRaw, "tags", "Name", "Comma seperated list of tags to group by (e.g. `Environment,Application`). You can also filter by tag value (e.g. `Application,Envionment=Production`)")
+	flag.StringVar(&labelRaw, "labels", "", "Comma seperated list of labels. You add custom labels to the targets.(e.g. `Region:A1`)")
 
 	flag.Parse()
 	tags = parseTags(tagsRaw)
 	region = regionRaw //TODO
 	//region = aws.Regions[regionRaw]
+
+	labels = make(map[string]string)
+	for _, l := range strings.Split(labelRaw, ",") {
+		parts := strings.Split(l, ":")
+		if len(parts) == 2 {
+			labels[parts[0]] = parts[1]
+		}
+	}
 }
 
 func groupByTags(instances []*ec2.Instance, tags []string) map[string]*TargetGroup {

@@ -18,13 +18,14 @@ import (
 )
 
 var (
-	dest    string
-	port    int
-	region  string
-	elbName string
-	sleep   time.Duration
-	tags    Tags
-	labels  map[string]string
+	dest     string
+	port     int
+	region   string
+	elbName  string
+	sleep    time.Duration
+	tags     Tags
+	labels   map[string]string
+	ec2Attrs map[string]string
 )
 
 // TargetGroup is a collection of related hosts that prometheus monitors
@@ -115,9 +116,10 @@ func main() {
 
 func initFlags() {
 	var (
-		tagsRaw   string
-		regionRaw string
-		labelRaw  string
+		tagsRaw     string
+		regionRaw   string
+		labelRaw    string
+		ec2AttrsRaw string
 	)
 
 	flag.DurationVar(&sleep, "sleep", 0, "Amount of time between regenerating the target_group.json. If 0, terminate after the first generation")
@@ -127,6 +129,7 @@ func initFlags() {
 	flag.StringVar(&elbName, "elb", "", "AWS ELB AccessPointName")
 	flag.StringVar(&tagsRaw, "tags", "Name", "Comma seperated list of tags to group by (e.g. `Environment,Application`). You can also filter by tag value (e.g. `Application,Envionment=Production`)")
 	flag.StringVar(&labelRaw, "labels", "", "Comma seperated list of labels. You add custom labels to the targets.(e.g. `Region:A1`)")
+	flag.StringVar(&ec2AttrsRaw, "ec2", "", "Comma seperated list of ec2 instance attributes. (e.g. ipAddress) Currently ipAddress is only supported")
 
 	flag.Parse()
 	tags = parseTags(tagsRaw)
@@ -138,6 +141,16 @@ func initFlags() {
 		parts := strings.Split(l, ":")
 		if len(parts) == 2 {
 			labels[parts[0]] = parts[1]
+		}
+	}
+
+	ec2Attrs = make(map[string]string)
+	for _, i := range strings.Split(ec2AttrsRaw, ",") {
+		parts := strings.Split(i, ":")
+		if len(parts) == 1 {
+			ec2Attrs[parts[0]] = ""
+		} else if len(parts) == 2 {
+			ec2Attrs[parts[0]] = parts[1]
 		}
 	}
 }
@@ -162,6 +175,16 @@ func groupByTags(instances []*ec2.Instance, tags []string) map[string]*TargetGro
 				tagVal := getTag(instance, tagKey)
 				if tagVal != "" {
 					labels[tagKey] = tagVal
+				}
+			}
+			for k, v := range ec2Attrs {
+				tagVal := getInstanceAttribute(instance, k)
+				if tagVal != "" {
+					if v != "" {
+						labels[v] = tagVal
+					} else if k != "" {
+						labels[k] = tagVal
+					}
 				}
 			}
 			targetGroup = &TargetGroup{
@@ -302,4 +325,26 @@ func instanceIdsOfELB(elbSvc *elb.ELB, name string) ([]*string, error) {
 	}
 
 	return instanceIds, nil
+}
+
+func getInstanceAttribute(instance *ec2.Instance, name string) string {
+	switch name {
+	case "ipAddress":
+		if instance.PublicIpAddress != nil {
+			return *instance.PublicIpAddress
+		}
+	case "privateIpAddress":
+		if instance.PrivateIpAddress != nil {
+			return *instance.PrivateIpAddress
+		}
+	case "availabilityZone":
+		if instance.Placement != nil {
+			return *instance.Placement.AvailabilityZone
+		}
+	case "vpcId":
+		if instance.VpcId != nil {
+			return *instance.VpcId
+		}
+	}
+	return ""
 }

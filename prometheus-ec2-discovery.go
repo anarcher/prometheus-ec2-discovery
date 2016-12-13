@@ -88,7 +88,6 @@ func main() {
 
 		targetGroups := groupByTags(instances, tagKeys)
 		if len(labels) > 0 {
-			fmt.Println("labels:", len(labels))
 			for _, tg := range targetGroups {
 				for k, v := range labels {
 					tg.Labels[k] = v
@@ -166,6 +165,13 @@ func groupByTags(instances []*ec2.Instance, tags []string) map[string]*TargetGro
 		key := ""
 		for _, tagKey := range tags {
 			key = fmt.Sprintf("%s|%s=%s", key, tagKey, getTag(instance, tagKey))
+		}
+		for k, v := range ec2Attrs {
+			attrKey := v
+			if attrKey == "" {
+				attrKey = k
+			}
+			key = fmt.Sprintf("%s|%s=%s", key, attrKey, getInstanceAttribute(instance, k))
 		}
 
 		targetGroup, ok := targetGroups[key]

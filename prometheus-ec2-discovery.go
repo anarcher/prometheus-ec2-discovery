@@ -351,6 +351,10 @@ func getInstanceAttribute(instance *ec2.Instance, name string) string {
 		if instance.VpcId != nil {
 			return *instance.VpcId
 		}
+	case "instanceId":
+		if instance.InstanceId != nil {
+			return *instance.InstanceId
+		}
 	}
 	return ""
 }
